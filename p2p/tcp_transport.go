@@ -77,14 +77,20 @@ func (t *TCPTransport) handleConnection(conn net.Conn) {
 		return
 	}
 
-	msg := &Temp{}
+	msg := &Message{}
+	//buf := make([]byte, 1024) // Buffer for reading messages
 	//could add a limit for error for a peer, if it fails to decode a message
 	for {
 		if err := t.Decoder.Decode(conn, msg); err != nil {
 			fmt.Printf("Error decoding message from peer %s: %v\n", peer.ID, err)
 			conn.Close()
-			return
+			continue
 		}
+		// n, err := conn.Read(buf)
+		// if err != nil {
+		// 	fmt.Printf("Error reading from peer %s: %v\n", peer.ID, err)
+		// }
+		fmt.Printf("Received message from peer : %+v\n", msg)
 	}
 
 	// Handle the connection (e.g., read/write data)

@@ -9,8 +9,8 @@ import (
 func main() {
 	conf := p2p.TCPTransportOpts{
 		ListenAddress: ":1000",
-		ShakeHands:    p2p.NOPHandshake, // Default handshake function, can be replaced with a custom one
-		Decoder:       nil,              // Replace with an actual decoder implementation
+		ShakeHands:    p2p.NOPHandshake,     // Default handshake function, can be replaced with a custom one
+		Decoder:       p2p.DefaultDecoder{}, // Replace with an actual decoder implementation
 	}
 	tr := p2p.NewTCPTransport(conf)
 
