@@ -93,14 +93,14 @@ func (s *Store) HasKey(key string) (bool, error) {
 		return false, fmt.Errorf("invalid path for key: %s", key)
 	}
 
-	pathAndFileName := pathKey.FullPath() // Get the full path and filename
-	if _, err := os.Stat(pathAndFileName); os.IsNotExist(err) {
+	pathAndFileNameWithRoot := fmt.Sprintf("%s/%s", s.Root, pathKey.FullPath()) // Get the full path and filename
+	if _, err := os.Stat(pathAndFileNameWithRoot); os.IsNotExist(err) {
 		return false, nil // Key does not exist
 	} else if err != nil {
-		return false, fmt.Errorf("error checking file %s: %w", pathAndFileName, err)
+		return false, fmt.Errorf("error checking file %s: %w", pathAndFileNameWithRoot, err)
 	}
 
-	log.Printf("Key [%s] exists in storage.\n", key)
+	log.Printf("Key [%s] exists in \"%s\" folder. \n", key, s.Root)
 	return true, nil // Key exists
 }
 
@@ -127,7 +127,8 @@ func (s *Store) Delete(key string) error {
 	pathAndFileName := pathKey.FullPath() // Get the full path and filename
 
 	// Remove the file from the disk
-	if err := os.RemoveAll(FirstFolder(pathAndFileName)); err != nil {
+	removedFilePath := fmt.Sprintf("%s/%s", s.Root, FirstFolder(pathAndFileName))
+	if err := os.RemoveAll(removedFilePath); err != nil {
 		return fmt.Errorf("error deleting file %s: %w", pathAndFileName, err)
 	}
 
@@ -160,13 +161,13 @@ func (s *Store) ReadStream(key string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("invalid path for key: %s", key)
 	}
 
-	pathAndFileName := pathKey.FullPath() // Get the full path and filename
-	file, err := os.Open(pathAndFileName)
+	pathAndFileNameWithRoot := fmt.Sprintf("%s/%s", s.Root, pathKey.FullPath())
+	file, err := os.Open(pathAndFileNameWithRoot)
 	if err != nil {
-		return nil, fmt.Errorf("error opening file %s: %w", pathAndFileName, err)
+		return nil, fmt.Errorf("error opening file %s: %w", pathAndFileNameWithRoot, err)
 	}
 
-	log.Printf("Opened file %s for reading\n", pathAndFileName)
+	log.Printf("Opened file %s for reading\n", pathAndFileNameWithRoot)
 	return file, nil
 }
 
@@ -195,7 +196,7 @@ func (s *Store) writeStream(key string, r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("Wrote %d bytes to %s\n", n, pathAndFileNameWithRoot)
+	log.Printf("Wrote ||%d|| bytes to %s\n", n, pathAndFileNameWithRoot)
 
 	if pathKey.Pathname == "" {
 		return nil // No transformation, return early

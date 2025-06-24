@@ -53,6 +53,12 @@ func TestStore(t *testing.T) {
 		t.Errorf("Expected no error, got %v", err)
 	}
 
+	if has, err := store.HasKey(key); err != nil {
+		t.Errorf("Expected no error checking key, got %v", err)
+	} else if !has {
+		t.Errorf("Expected key %s to exist, but it does not", key)
+	}
+
 	b, err := io.ReadAll(r)
 	if err != nil {
 		t.Errorf("Expected no error reading data, got %v", err)
