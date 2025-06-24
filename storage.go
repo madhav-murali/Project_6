@@ -2,18 +2,18 @@ package main
 
 import (
 	"bytes"
-	"crypto/md5"
 	"crypto/sha1"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"strings"
 )
 
-type PathTransformFunc func(string) string
+type PathTransformFunc func(string) PathKey
 
-func CASPathTransformFunc(key string) string {
+var CASPathTransformFunc PathTransformFunc = func(key string) PathKey {
 	hash := sha1.Sum([]byte(key))
 	hashStr := hex.EncodeToString(hash[:])
 
@@ -28,11 +28,26 @@ func CASPathTransformFunc(key string) string {
 	// This function transforms the key into a path suitable for CAS storage.
 	// For example, it could hash the key or format it in a specific way.
 	// Here, we simply return the key as a placeholder.
-	return strings.Join(paths, "/") // Replace with actual transformation logic if needed
+	return PathKey{
+		Pathname: strings.Join(paths, "/"),
+		Key:      key,
+	} // Replace with actual transformation logic if needed
 }
 
-var DefaultPathTransformFunc = func(key string) string {
-	return key // Default implementation returns the path unchanged
+type PathKey struct {
+	Pathname string
+	Key      string
+}
+
+func (pk PathKey) FullPath() string {
+	return fmt.Sprintf("%s/%s", pk.Pathname, pk.Key)
+}
+
+var DefaultPathTransformFunc = func(key string) PathKey {
+	return PathKey{
+		Pathname: key, // Default implementation returns the key as the pathname
+		Key:      key, // Default implementation returns the key unchanged
+	} // Default implementation returns the path unchanged
 }
 
 type StoreOpts struct {
@@ -58,31 +73,66 @@ func NewStore(opts StoreOpts) *Store {
 	}
 }
 
+// Read reads the data from the storage for the given key.
+// It returns an io.Reader that can be used to read the data.
+// If the key does not exist, it returns an error.
+func (s *Store) Read(key string) (io.Reader, error) {
+	f, err := s.ReadStream(key)
+	if err != nil {
+		return nil, fmt.Errorf("error reading stream for key %s: %w", key, err)
+	}
+	defer f.Close() // Ensure the file is closed after reading
+	buf := new(bytes.Buffer)
+	if _, err := io.Copy(buf, f); err != nil {
+		return nil, fmt.Errorf("error copying data from file %s: %w", key, err)
+	}
+	return buf, nil
+	// Implement the logic to read data from the storage.
+}
+
+// Used to read the stream from the storage.
+// This function opens the file corresponding to the key and returns an io.ReadCloser.
+func (s *Store) ReadStream(key string) (io.ReadCloser, error) {
+	pathKey := s.PathTransformFunc(key)
+	if pathKey.Pathname == "" {
+		return nil, fmt.Errorf("invalid path for key: %s", key)
+	}
+
+	pathAndFileName := pathKey.FullPath() // Get the full path and filename
+	file, err := os.Open(pathAndFileName)
+	if err != nil {
+		return nil, fmt.Errorf("error opening file %s: %w", pathAndFileName, err)
+	}
+
+	log.Printf("Opened file %s for reading\n", pathAndFileName)
+	return file, nil
+}
+
 func (s *Store) writeStream(key string, r io.Reader) error {
-	pathName := s.PathTransformFunc(key)
-	if err := os.MkdirAll(pathName, os.ModePerm); err != nil {
+	pathKey := s.PathTransformFunc(key)
+	if err := os.MkdirAll(pathKey.Pathname, os.ModePerm); err != nil {
 		return err
 	}
 
-	buf := new(bytes.Buffer)
-	io.Copy(buf, r) // Read the data from the reader into a buffer
+	// buf := new(bytes.Buffer)
+	// io.Copy(buf, r) // Read the data from the reader into a buffer
 
-	filenameBytes := md5.Sum(buf.Bytes())            // Create an MD5 hash of the data
-	filename := hex.EncodeToString(filenameBytes[:]) // Convert the hash to a string
-	pathAndFileName := pathName + "/" + filename
+	// filenameBytes := md5.Sum(buf.Bytes())            // Create an MD5 hash of the data
+	// filename := hex.EncodeToString(filenameBytes[:]) // Convert the hash to a string
+	pathAndFileName := pathKey.FullPath() // Get the full path and filename
 
 	file, err := os.Create(pathAndFileName)
 	if err != nil {
 		return err
 	}
 
-	n, err := io.Copy(file, buf)
+	n, err := io.Copy(file, r)
 	if err != nil {
 		return err
 	}
 	log.Printf("Wrote %d bytes to %s\n", n, pathAndFileName)
 
-	if pathName == "" {
+	if pathKey.Pathname == "" {
 		return nil // No transformation, return early
 	}
 	return nil
