@@ -39,6 +39,8 @@ type PathKey struct {
 	Key      string
 }
 
+// FullPath returns the full path including the key.
+// This is useful for constructing the complete file path in the storage.
 func (pk PathKey) FullPath() string {
 	return fmt.Sprintf("%s/%s", pk.Pathname, pk.Key)
 }
@@ -71,6 +73,56 @@ func NewStore(opts StoreOpts) *Store {
 	return &Store{
 		StoreOpts: opts,
 	}
+}
+
+// Checks if the key exists in the storage.
+// It uses the PathTransformFunc to determine the path for the key.
+func (s *Store) HasKey(key string) (bool, error) {
+	pathKey := s.PathTransformFunc(key)
+	if pathKey.Pathname == "" {
+		return false, fmt.Errorf("invalid path for key: %s", key)
+	}
+
+	pathAndFileName := pathKey.FullPath() // Get the full path and filename
+	if _, err := os.Stat(pathAndFileName); os.IsNotExist(err) {
+		return false, nil // Key does not exist
+	} else if err != nil {
+		return false, fmt.Errorf("error checking file %s: %w", pathAndFileName, err)
+	}
+
+	log.Printf("Key [%s] exists in storage.\n", key)
+	return true, nil // Key exists
+}
+
+// FirstFolder returns the first folder in the path.
+// This is useful for determining the first segment of the path.
+func FirstFolder(path string) string {
+	parts := strings.Split(path, "/")
+	if len(parts) > 0 {
+		return parts[0]
+	}
+	return ""
+}
+
+// Delete removes the data associated with the given key from the storage.
+// It returns an error if the key does not exist or if there is an issue deleting the
+// data.
+// It uses the PathTransformFunc to determine the path for the key.
+func (s *Store) Delete(key string) error {
+	pathKey := s.PathTransformFunc(key)
+	if pathKey.Pathname == "" {
+		return fmt.Errorf("invalid path for key: %s", key)
+	}
+
+	pathAndFileName := pathKey.FullPath() // Get the full path and filename
+
+	// Remove the file from the disk
+	if err := os.RemoveAll(FirstFolder(pathAndFileName)); err != nil {
+		return fmt.Errorf("error deleting file %s: %w", pathAndFileName, err)
+	}
+
+	log.Printf("Deleted file [%s] from disk.\n", pathAndFileName)
+	return nil
 }
 
 // Read reads the data from the storage for the given key.
@@ -125,6 +177,8 @@ func (s *Store) writeStream(key string, r io.Reader) error {
 	if err != nil {
 		return err
 	}
+
+	defer file.Close() // Ensure the file is closed after writing
 
 	n, err := io.Copy(file, r)
 	if err != nil {

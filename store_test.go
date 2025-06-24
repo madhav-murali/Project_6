@@ -17,6 +17,25 @@ func TestPathTransformFunc(t *testing.T) {
 	log.Println(pathname.Pathname)
 
 }
+
+func TestStoreDeleteKey(t *testing.T) {
+	opts := StoreOpts{
+		PathTransformFunc: CASPathTransformFunc,
+	}
+	store := NewStore(opts)
+	key := "hello-delete-man"
+	data := []byte("the data inside the file / reader")
+	if err := store.writeStream(key, bytes.NewReader(data)); err != nil {
+		t.Errorf("Expected no error writing data, got %v", err)
+	}
+	// Attempt to delete the key
+	if err := store.Delete(key); err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	if store == nil {
+		t.Errorf("Expected store to be created, got nil")
+	}
+}
 func TestStore(t *testing.T) {
 
 	opts := StoreOpts{
@@ -43,8 +62,9 @@ func TestStore(t *testing.T) {
 		t.Errorf("Expected data to be 'the data inside the file / reader', got '%s'", string(b))
 	}
 
-	if store == nil {
-		t.Errorf("Expected store to be created, got nil")
+	if err = store.Delete(key); err != nil {
+		t.Errorf("Expected no error deleting key, got %v", err)
 	}
+
 	//if store.StoreOpts.PathTransformFunc == nil {
 }
