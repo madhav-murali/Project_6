@@ -11,6 +11,8 @@ import (
 	"strings"
 )
 
+const defaultRootFolderName = "storage"
+
 type PathTransformFunc func(string) PathKey
 
 var CASPathTransformFunc PathTransformFunc = func(key string) PathKey {
@@ -30,31 +32,33 @@ var CASPathTransformFunc PathTransformFunc = func(key string) PathKey {
 	// Here, we simply return the key as a placeholder.
 	return PathKey{
 		Pathname: strings.Join(paths, "/"),
-		Key:      key,
+		Filename: key,
 	} // Replace with actual transformation logic if needed
 }
 
 type PathKey struct {
 	Pathname string
-	Key      string
+	Filename string
 }
 
 // FullPath returns the full path including the key.
 // This is useful for constructing the complete file path in the storage.
 func (pk PathKey) FullPath() string {
-	return fmt.Sprintf("%s/%s", pk.Pathname, pk.Key)
+	return fmt.Sprintf("%s/%s", pk.Pathname, pk.Filename)
 }
 
 var DefaultPathTransformFunc = func(key string) PathKey {
 	return PathKey{
 		Pathname: key, // Default implementation returns the key as the pathname
-		Key:      key, // Default implementation returns the key unchanged
+		Filename: key, // Default implementation returns the key unchanged
 	} // Default implementation returns the path unchanged
 }
 
 type StoreOpts struct {
-	// Save stores the data in the storage.
-	PathTransformFunc PathTransformFunc // Function to transform the path before saving
+	// Root directory for the storage of all files in the system
+	Root string
+	// Function to transform the path before saving
+	PathTransformFunc PathTransformFunc
 	// SaveFunc          func(data []byte) error // Function to save data
 }
 
@@ -70,6 +74,12 @@ type Store struct {
 // }
 
 func NewStore(opts StoreOpts) *Store {
+	if opts.PathTransformFunc == nil {
+		opts.PathTransformFunc = DefaultPathTransformFunc // Use default if not provided
+	}
+	if opts.Root == "" {
+		opts.Root = defaultRootFolderName // Set default root folder if not provided
+	}
 	return &Store{
 		StoreOpts: opts,
 	}
@@ -162,7 +172,8 @@ func (s *Store) ReadStream(key string) (io.ReadCloser, error) {
 
 func (s *Store) writeStream(key string, r io.Reader) error {
 	pathKey := s.PathTransformFunc(key)
-	if err := os.MkdirAll(pathKey.Pathname, os.ModePerm); err != nil {
+	pathKeyWithRoot := fmt.Sprintf("%s/%s", s.Root, pathKey.Pathname)
+	if err := os.MkdirAll(pathKeyWithRoot, os.ModePerm); err != nil {
 		return err
 	}
 
@@ -171,9 +182,9 @@ func (s *Store) writeStream(key string, r io.Reader) error {
 
 	// filenameBytes := md5.Sum(buf.Bytes())            // Create an MD5 hash of the data
 	// filename := hex.EncodeToString(filenameBytes[:]) // Convert the hash to a string
-	pathAndFileName := pathKey.FullPath() // Get the full path and filename
+	pathAndFileNameWithRoot := fmt.Sprintf("%s/%s", s.Root, pathKey.FullPath())
 
-	file, err := os.Create(pathAndFileName)
+	file, err := os.Create(pathAndFileNameWithRoot)
 	if err != nil {
 		return err
 	}
@@ -184,7 +195,7 @@ func (s *Store) writeStream(key string, r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("Wrote %d bytes to %s\n", n, pathAndFileName)
+	log.Printf("Wrote %d bytes to %s\n", n, pathAndFileNameWithRoot)
 
 	if pathKey.Pathname == "" {
 		return nil // No transformation, return early
