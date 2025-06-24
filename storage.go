@@ -104,6 +104,15 @@ func (s *Store) HasKey(key string) (bool, error) {
 	return true, nil // Key exists
 }
 
+func (s *Store) Clear() error {
+	// Clear the storage by removing the root folder
+	if err := os.RemoveAll(s.Root); err != nil {
+		return fmt.Errorf("error clearing storage: %w", err)
+	}
+	log.Printf("Cleared storage at %s\n", s.Root)
+	return nil
+}
+
 // FirstFolder returns the first folder in the path.
 // This is useful for determining the first segment of the path.
 func FirstFolder(path string) string {
