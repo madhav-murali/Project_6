@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"errors"
 	"fmt"
 	"net"
 )
@@ -12,9 +13,23 @@ type TCPPeer struct {
 	//ID       string // Unique identifier for the peer, could be an IP address or a custom ID
 }
 
-// ID returns the unique identifier for the peer to satisfy the Peer interface.
-func (p *TCPPeer) ID() string {
-	return p.conn.RemoteAddr().String()
+// RemoteAddr returns the unique identifier for the peer to satisfy the Peer interface.
+func (p *TCPPeer) RemoteAddr() net.Addr {
+	return p.conn.RemoteAddr()
+}
+
+// Send sends a message to the peer over the TCP connection.
+// It encodes the message and writes it to the connection.
+// It returns an error if the connection is nil or if there is an error sending the message
+func (p *TCPPeer) Send(msg RPC) error {
+	if p.conn == nil {
+		return errors.New("connection is nil, cannot send message")
+	}
+	//Encode the message and send it over the connection.
+	if _, err := p.conn.Write(msg.Payload); err != nil {
+		return fmt.Errorf("error sending message to peer %s: %w", p.conn.RemoteAddr(), err)
+	}
+	return nil
 }
 
 type TCPTransportOpts struct {
@@ -46,7 +61,7 @@ func (t *TCPTransport) Consume() <-chan RPC {
 	return t.rpcchan
 }
 
-func NewTCPPeer(conn net.Conn, outbound bool, id string) *TCPPeer {
+func NewTCPPeer(conn net.Conn, outbound bool, addr net.Addr) *TCPPeer {
 	return &TCPPeer{
 		conn:     conn,
 		outbound: outbound,
@@ -69,19 +84,27 @@ func (t *TCPTransport) ListenAndAccept() error {
 	if err != nil {
 		return err
 	}
+
 	go t.StartAcceptLoop()
+
+	fmt.Printf("TCP transport listening on %s\n", t.ListenAddress)
+
 	return nil
 }
 
 func (t *TCPTransport) StartAcceptLoop() {
 	for {
 		conn, err := t.listener.Accept()
+		if errors.Is(err, net.ErrClosed) {
+			fmt.Println("Listener closed, stopping accept loop")
+			return // Exit the loop if the listener is closed
+		}
 		if err != nil {
 			fmt.Printf("Error accepting connection: %v\n", err)
 			continue
 		}
-		fmt.Printf("Accepted connection from %s\n", conn.RemoteAddr().String())
-		go t.handleConnection(conn)
+		fmt.Printf("Accepted connection from %s\n", conn.RemoteAddr())
+		go t.handleConnection(conn, false) // Handle the connection in a separate goroutine
 	}
 
 }
@@ -90,16 +113,37 @@ type Temp struct {
 	// This is a placeholder for the message structure.
 }
 
+// Close closes the transport and frees resources.
+// It closes the listener and the rpcchan channel to stop receiving messages.
+// It is important to close the transport when done to free up resources.
+func (t *TCPTransport) Close() error {
+	return t.listener.Close() // Close the listener to stop accepting new connections
+
+}
+
+// Dial connects to a peer by address.
+// It creates a new connection to the peer and starts handling it in a separate goroutine.
+// It returns an error if the connection fails.
+func (t *TCPTransport) Dial(addr string) error {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("error dialing peer %s: %w", addr, err)
+
+	}
+	go t.handleConnection(conn, true) // Handle the connection in a separate goroutine
+	return nil
+}
+
 // handleConnection handles the incoming connection from a peer.
 // It performs the handshake, decodes messages, and sends them to the rpcchan channel.
-func (t *TCPTransport) handleConnection(conn net.Conn) {
+func (t *TCPTransport) handleConnection(conn net.Conn, outbound bool) {
 	var err error
 	defer func() {
 		fmt.Printf("Closing connection to peer: %s\n", err)
 		conn.Close()
 	}()
 
-	peer := NewTCPPeer(conn, false, conn.RemoteAddr().String())
+	peer := NewTCPPeer(conn, false, conn.RemoteAddr())
 	if err := t.ShakeHands(peer); err != nil {
 		fmt.Printf("Handshake failed with peer : %v\n", err)
 		conn.Close()

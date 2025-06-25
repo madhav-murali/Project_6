@@ -2,33 +2,59 @@ package main
 
 import (
 	"Project_6/p2p"
-	"fmt"
 	"log"
 )
 
-func main() {
-	conf := p2p.TCPTransportOpts{
-		ListenAddress: ":1000",
-		ShakeHands:    p2p.NOPHandshake,     // Default handshake function, can be replaced with a custom one
+// makeServer initializes a new FileServer with the given listen address and root directory.
+// It sets up the TCP transport and the path transformation function.
+func makeServer(ListenAddr string, nodes ...string) *FileServer {
+
+	tcpTransport := p2p.NewTCPTransport(p2p.TCPTransportOpts{
+		ListenAddress: ListenAddr,
+		ShakeHands:    p2p.NOPHandshake,     // Default handshake function
 		Decoder:       p2p.DefaultDecoder{}, // Replace with an actual decoder implementation
-		OnPeerConnect: func(peer p2p.Peer) error {
-			fmt.Printf("Doing some logic")
+	})
 
-			return nil // No error, connection successful
-		},
+	fsOpts := FileServerOpts{
+		ListenAddr:        ListenAddr,
+		StorageRoot:       ListenAddr + "_network", // Use the listen address as the root directory
+		PathTransformFunc: CASPathTransformFunc,    // Use the custom path transform function
+		Transport:         tcpTransport,
+		BootStrapNodes:    nodes, // Example bootstrap nodes
 	}
-	tr := p2p.NewTCPTransport(conf)
 
+	fs := NewFileServer(fsOpts)
+
+	tcpTransport.OnPeerConnect = fs.AddPeer
+
+	return NewFileServer(fsOpts)
+}
+
+// func main() {
+// 	fs := makeServer()
+
+// 	go func() {
+// 		time.Sleep(time.Second * 3)
+// 		fs.Stop() // Stop the file server after 3 seconds
+// 		log.Println("File server stopped")
+// 	}()
+
+// 	if err := fs.Start(); err != nil {
+// 		log.Fatalf("Failed to start file server: %v", err)
+// 	}
+
+// 	//select {} // Keep the main goroutine running to accept connections
+
+// }
+
+func main() {
+	fs1 := makeServer(":3000", "")
+	fs2 := makeServer(":4000", ":3000")
 	go func() {
-		for {
-			msg := <-tr.Consume()
-			fmt.Printf("Received message: %+v", msg)
-		}
+		log.Fatal(fs1.Start())
 	}()
-	if err := tr.ListenAndAccept(); err != nil {
-		log.Fatalf("Failed to start TCP transport: %v", err)
-	}
+	fs2.Start() // Start the second server
+	// Start another server on a different port
+	// This can be used fofr testing or as a bootstrap node
 
-	select {} // Keep the main goroutine running to accept connections
-	//fmt.Println("Listening on  osty yarn!")
 }

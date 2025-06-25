@@ -36,6 +36,8 @@ var CASPathTransformFunc PathTransformFunc = func(key string) PathKey {
 	} // Replace with actual transformation logic if needed
 }
 
+// PathKey represents a key with a pathname and filename.
+// This is useful for organizing files in the storage system.
 type PathKey struct {
 	Pathname string
 	Filename string
@@ -54,6 +56,7 @@ var DefaultPathTransformFunc = func(key string) PathKey {
 	} // Default implementation returns the path unchanged
 }
 
+// StoreOpts defines the options for the storage system.
 type StoreOpts struct {
 	// Root directory for the storage of all files in the system
 	Root string
@@ -62,6 +65,7 @@ type StoreOpts struct {
 	// SaveFunc          func(data []byte) error // Function to save data
 }
 
+// Store represents the storage system with options for configuration.
 type Store struct {
 	//StoreOpts
 	StoreOpts
@@ -178,6 +182,11 @@ func (s *Store) ReadStream(key string) (io.ReadCloser, error) {
 
 	log.Printf("Opened file %s for reading\n", pathAndFileNameWithRoot)
 	return file, nil
+}
+
+// Write writes the data to the storage for the given key.
+func (s *Store) Write(key string, r io.Reader) error {
+	return s.writeStream(key, r)
 }
 
 func (s *Store) writeStream(key string, r io.Reader) error {
