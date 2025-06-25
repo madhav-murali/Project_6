@@ -1,33 +1,55 @@
 package p2p
 
 import (
+	"bytes"
+	"encoding/binary"
+	"encoding/gob"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 )
 
 // Represents a peer in the P2P network. For the TCP implementation.
 type TCPPeer struct {
-	conn     net.Conn
+	net.Conn
 	outbound bool // true if outbound connection, false if inbound
 	//ID       string // Unique identifier for the peer, could be an IP address or a custom ID
 }
 
+// Returns the address of the transport.
+// This is used to get the address of the transport for sending messages.
+func (t *TCPTransport) ListenAddr() string {
+	return t.listener.Addr().String() // Return the address of the listener
+}
+
 // RemoteAddr returns the unique identifier for the peer to satisfy the Peer interface.
 func (p *TCPPeer) RemoteAddr() net.Addr {
-	return p.conn.RemoteAddr()
+	return p.Conn.RemoteAddr()
 }
 
 // Send sends a message to the peer over the TCP connection.
 // It encodes the message and writes it to the connection.
 // It returns an error if the connection is nil or if there is an error sending the message
-func (p *TCPPeer) Send(msg RPC) error {
-	if p.conn == nil {
+func (p *TCPPeer) Send(msg *RPC) error {
+	if p.Conn == nil {
 		return errors.New("connection is nil, cannot send message")
 	}
 	//Encode the message and send it over the connection.
-	if _, err := p.conn.Write(msg.Payload); err != nil {
-		return fmt.Errorf("error sending message to peer %s: %w", p.conn.RemoteAddr(), err)
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(msg); err != nil {
+		return fmt.Errorf("failed to encode message: %w", err)
+	}
+	data := buf.Bytes()
+
+	lengthPrefix := make([]byte, 4)
+	binary.BigEndian.PutUint32(lengthPrefix, uint32(len(data)))
+
+	if _, err := p.Conn.Write(lengthPrefix); err != nil {
+		return fmt.Errorf("failed to write length prefix: %w", err)
+	}
+	if _, err := p.Conn.Write(data); err != nil {
+		return fmt.Errorf("failed to write message: %w", err)
 	}
 	return nil
 }
@@ -63,7 +85,7 @@ func (t *TCPTransport) Consume() <-chan RPC {
 
 func NewTCPPeer(conn net.Conn, outbound bool, addr net.Addr) *TCPPeer {
 	return &TCPPeer{
-		conn:     conn,
+		Conn:     conn,
 		outbound: outbound,
 		//ID:       id,
 	}
@@ -72,8 +94,8 @@ func NewTCPPeer(conn net.Conn, outbound bool, addr net.Addr) *TCPPeer {
 // Close closes the connection to the peer.
 // It is important to close the connection when done to free up resources.
 func (p *TCPPeer) Close() error {
-	if p.conn != nil {
-		return p.conn.Close()
+	if p.Conn != nil {
+		return p.Conn.Close()
 	}
 	return nil
 }
@@ -137,6 +159,11 @@ func (t *TCPTransport) Dial(addr string) error {
 // handleConnection handles the incoming connection from a peer.
 // It performs the handshake, decodes messages, and sends them to the rpcchan channel.
 func (t *TCPTransport) handleConnection(conn net.Conn, outbound bool) {
+	if outbound {
+		fmt.Printf("Outbound connection established to peer: %s\n", conn.RemoteAddr())
+	} else {
+		fmt.Printf("Inbound connection established from peer: %s\n", conn.RemoteAddr())
+	}
 	var err error
 	defer func() {
 		fmt.Printf("Closing connection to peer: %s\n", err)
@@ -160,20 +187,29 @@ func (t *TCPTransport) handleConnection(conn net.Conn, outbound bool) {
 		}
 	}
 
-	rpc := RPC{}
-	spamProtec := 0
+	// rpc := RPC{}
+	// spamProtec := 0
 	//could add a limit for error for a peer, if it fails to decode a message
 	for {
-		if err := t.Decoder.Decode(conn, &rpc); err != nil {
-			fmt.Printf("Error decoding message from peer: %v\n", err)
-			conn.Close()
-			spamProtec++
-			if spamProtec > 5 {
-				return
-			} // Limit the number of errors before closing the connection
-			continue
+		hdr := make([]byte, 4)
+		if _, err := io.ReadFull(conn, hdr); err != nil {
+			return
 		}
-		rpc.From = conn.RemoteAddr()
+		n := int(binary.BigEndian.Uint32(hdr))
+
+		// 2. Read full RPC payload
+		buf := make([]byte, n)
+		if _, err := io.ReadFull(conn, buf); err != nil {
+			return
+		}
+
+		// 3. Decode into RPC struct
+		var rpc RPC
+		if err := gob.NewDecoder(bytes.NewReader(buf)).Decode(&rpc); err != nil {
+			return
+		}
+
+		//rpc.From = conn.RemoteAddr()
 		t.rpcchan <- rpc // Send the decoded message to the channel
 		//fmt.Printf("Received message from peer : %+v\n", string(rpc.Payload))
 	}

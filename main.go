@@ -2,8 +2,21 @@ package main
 
 import (
 	"Project_6/p2p"
+	"bytes"
+	"encoding/gob"
 	"log"
+	"net"
+	"strings"
+	"time"
 )
+
+func init() {
+	gob.Register(&net.TCPAddr{})
+	gob.Register([]byte{})
+	gob.Register(&Message{})
+	//gob.Register(&DataMessage{})
+
+}
 
 // makeServer initializes a new FileServer with the given listen address and root directory.
 // It sets up the TCP transport and the path transformation function.
@@ -17,8 +30,8 @@ func makeServer(ListenAddr string, nodes ...string) *FileServer {
 
 	fsOpts := FileServerOpts{
 		ListenAddr:        ListenAddr,
-		StorageRoot:       ListenAddr + "_network", // Use the listen address as the root directory
-		PathTransformFunc: CASPathTransformFunc,    // Use the custom path transform function
+		StorageRoot:       strings.ReplaceAll("File"+ListenAddr+"_network", ":", "_"), // Use the listen address as the root directory
+		PathTransformFunc: CASPathTransformFunc,                                       // Use the custom path transform function
 		Transport:         tcpTransport,
 		BootStrapNodes:    nodes, // Example bootstrap nodes
 	}
@@ -27,7 +40,7 @@ func makeServer(ListenAddr string, nodes ...string) *FileServer {
 
 	tcpTransport.OnPeerConnect = fs.AddPeer
 
-	return NewFileServer(fsOpts)
+	return fs
 }
 
 // func main() {
@@ -53,7 +66,20 @@ func main() {
 	go func() {
 		log.Fatal(fs1.Start())
 	}()
-	fs2.Start() // Start the second server
+
+	time.Sleep(time.Second * 5) // Wait for the servers to start
+
+	go fs2.Start()              // Start the second server
+	time.Sleep(time.Second * 5) // Wait for the servers to start
+
+	data := bytes.NewReader([]byte("Hello, World! from the magnificent server!"))
+
+	if err := fs2.StoreData("firstdata", data); err != nil {
+		log.Fatalf("Failed to store data: %v", err)
+	}
+
+	select {} // Keep the main goroutine running to accept connections
+	// Store some data in the second server's storage
 	// Start another server on a different port
 	// This can be used fofr testing or as a bootstrap node
 

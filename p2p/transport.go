@@ -1,18 +1,22 @@
 package p2p
 
-import "net"
+import (
+	"net"
+)
 
-//The users
+// The users
 type Peer interface {
-	Send(msg RPC) error // Send a message to the peer
-	Close() error
-	RemoteAddr() net.Addr // Unique identifier for the peer, could be an IP address or a custom ID
+	net.Conn
+	Send(msg *RPC) error // Send a message to the peer
+	// Close() error
+	// RemoteAddr() net.Addr // Unique identifier for the peer, could be an IP address or a custom ID
 }
 
-//The layer for communication TCP,UDP,WebSockets, etc.
+// The layer for communication TCP,UDP,WebSockets, etc.
 type Transport interface {
 	Dial(addr string) error // Dial a peer by address
 	ListenAndAccept() error
 	Consume() <-chan RPC // Channel to receive messages from peers
 	Close() error        // Close the transport to free resources
+	//ListenAddr() string  // Get the address of the transport
 }
