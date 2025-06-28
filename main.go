@@ -14,6 +14,7 @@ func init() {
 	gob.Register(&net.TCPAddr{})
 	gob.Register([]byte{})
 	gob.Register(&Message{})
+	gob.Register(&MessageStoreFile{})
 	//gob.Register(&DataMessage{})
 
 }
@@ -67,10 +68,10 @@ func main() {
 		log.Fatal(fs1.Start())
 	}()
 
-	time.Sleep(time.Second * 5) // Wait for the servers to start
+	time.Sleep(time.Second * 1) // Wait for the servers to start
 
 	go fs2.Start()              // Start the second server
-	time.Sleep(time.Second * 5) // Wait for the servers to start
+	time.Sleep(time.Second * 1) // Wait for the servers to start
 
 	data := bytes.NewReader([]byte("Hello, World! from the magnificent server!"))
 

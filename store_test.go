@@ -26,10 +26,10 @@ func TestStore(t *testing.T) {
 
 		reader := bytes.NewReader([]byte("the data inside the file / reader"))
 
-		if err := store.writeStream(key, reader); err != nil {
+		if n, err := store.writeStream(key, reader); err != nil {
 			t.Errorf("Expected no error, got %v", err)
 		}
-
+		fmt.Println("Wrote", n, "bytes to store with key:", key)
 		r, err := store.Read(key)
 
 		if err != nil {

@@ -6,14 +6,15 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	"io"
 	"net"
+	"sync"
 )
 
 // Represents a peer in the P2P network. For the TCP implementation.
 type TCPPeer struct {
 	net.Conn
-	outbound bool // true if outbound connection, false if inbound
+	outbound bool            // true if outbound connection, false if inbound
+	Wg       *sync.WaitGroup // Embed WaitGroup to satisfy interfaces that require it
 	//ID       string // Unique identifier for the peer, could be an IP address or a custom ID
 }
 
@@ -35,6 +36,8 @@ func (p *TCPPeer) Send(msg *RPC) error {
 	if p.Conn == nil {
 		return errors.New("connection is nil, cannot send message")
 	}
+	//fmt.Printf("Sending message to %s: key=%s, payload=%s\n", p.Conn.RemoteAddr(), msg.From, string(msg.Payload))
+
 	//Encode the message and send it over the connection.
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(msg); err != nil {
@@ -87,6 +90,7 @@ func NewTCPPeer(conn net.Conn, outbound bool, addr net.Addr) *TCPPeer {
 	return &TCPPeer{
 		Conn:     conn,
 		outbound: outbound,
+		Wg:       &sync.WaitGroup{}, // Wg is zero value initialized automatically
 		//ID:       id,
 	}
 }
@@ -129,10 +133,6 @@ func (t *TCPTransport) StartAcceptLoop() {
 		go t.handleConnection(conn, false) // Handle the connection in a separate goroutine
 	}
 
-}
-
-type Temp struct {
-	// This is a placeholder for the message structure.
 }
 
 // Close closes the transport and frees resources.
@@ -187,34 +187,25 @@ func (t *TCPTransport) handleConnection(conn net.Conn, outbound bool) {
 		}
 	}
 
-	// rpc := RPC{}
-	// spamProtec := 0
+	//rpc := RPC{}
 	//could add a limit for error for a peer, if it fails to decode a message
 	for {
-		hdr := make([]byte, 4)
-		if _, err := io.ReadFull(conn, hdr); err != nil {
-			return
-		}
-		n := int(binary.BigEndian.Uint32(hdr))
-
-		// 2. Read full RPC payload
-		buf := make([]byte, n)
-		if _, err := io.ReadFull(conn, buf); err != nil {
+		rpc := RPC{}
+		err = t.Decoder.Decode(conn, &rpc)
+		if err != nil {
 			return
 		}
 
-		// 3. Decode into RPC struct
-		var rpc RPC
-		if err := gob.NewDecoder(bytes.NewReader(buf)).Decode(&rpc); err != nil {
-			return
+		rpc.From = conn.RemoteAddr().String()
+
+		if rpc.Stream {
+			peer.Wg.Add(1)
+			fmt.Printf("[%s] incoming stream, waiting...\n", conn.RemoteAddr())
+			t.rpcchan <- rpc
+			peer.Wg.Wait()
+			fmt.Printf("[%s] stream closed, resuming read loop\n", conn.RemoteAddr())
 		}
 
-		//rpc.From = conn.RemoteAddr()
-		t.rpcchan <- rpc // Send the decoded message to the channel
-		//fmt.Printf("Received message from peer : %+v\n", string(rpc.Payload))
 	}
 
-	// Handle the connection (e.g., read/write data)
-	// This is a placeholder for actual handling logic
-	// You can implement your own protocol here
 }

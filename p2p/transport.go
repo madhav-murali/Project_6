@@ -7,7 +7,8 @@ import (
 // The users
 type Peer interface {
 	net.Conn
-	Send(msg *RPC) error // Send a message to the peer
+	Send(msg *RPC) error // Send a message to the peer // WaitGroup to wait for the peer to finish processing
+	//*sync.WaitGroup      // WaitGroup to wait for the peer to finish processing
 	// Close() error
 	// RemoteAddr() net.Addr // Unique identifier for the peer, could be an IP address or a custom ID
 }

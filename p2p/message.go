@@ -1,8 +1,14 @@
 package p2p
 
+const (
+	IncomingMessage = 0x1
+	IncomingStream  = 0x2
+)
+
+// RPC holds any arbitrary data that is being sent over the
+// each transport between two nodes in the network.
 type RPC struct {
-	// From    net.Addr // The address of the peer sending the message
-	// To      net.Addr // The address of the peer receiving the message
-	Key     string      // The key for the data being sent
-	Payload interface{} // The actual data being sent in the message
+	From    string
+	Payload any
+	Stream  bool
 }

@@ -185,15 +185,15 @@ func (s *Store) ReadStream(key string) (io.ReadCloser, error) {
 }
 
 // Write writes the data to the storage for the given key.
-func (s *Store) Write(key string, r io.Reader) error {
+func (s *Store) Write(key string, r io.Reader) (int64, error) {
 	return s.writeStream(key, r)
 }
 
-func (s *Store) writeStream(key string, r io.Reader) error {
+func (s *Store) writeStream(key string, r io.Reader) (int64, error) {
 	pathKey := s.PathTransformFunc(key)
 	pathKeyWithRoot := fmt.Sprintf("%s/%s", s.Root, pathKey.Pathname)
 	if err := os.MkdirAll(pathKeyWithRoot, os.ModePerm); err != nil {
-		return err
+		return 0, err
 	}
 
 	// buf := new(bytes.Buffer)
@@ -205,19 +205,19 @@ func (s *Store) writeStream(key string, r io.Reader) error {
 
 	file, err := os.Create(pathAndFileNameWithRoot)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	defer file.Close() // Ensure the file is closed after writing
 
 	n, err := io.Copy(file, r)
 	if err != nil {
-		return err
+		return 0, fmt.Errorf("error writing to file %s: %w", pathAndFileNameWithRoot, err)
 	}
 	log.Printf("Wrote ||%d|| bytes to %s\n", n, pathAndFileNameWithRoot)
 
 	if pathKey.Pathname == "" {
-		return nil // No transformation, return early
+		return 0, nil // No transformation, return early
 	}
-	return nil
+	return n, nil
 }

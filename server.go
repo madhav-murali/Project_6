@@ -49,28 +49,19 @@ type Message struct {
 	Payload any
 }
 
+type MessageStoreFile struct {
+	Key  string // Key to identify the file
+	Size int64  // Size of the file, if needed
+
+}
+
+type MessageGetFile struct {
+	Key string // Key to identify the file
+
+}
+
 // Broadcast sends a message to all connected peers.
 func (fs *FileServer) Broadcast(msg *Message) error {
-	// if msg == nil {
-	// 	return fmt.Errorf("message cannot be nil")
-	// }
-	// fs.PeerLock.Lock()
-	// defer fs.PeerLock.Unlock()
-	// log.Printf("Broadcasting to %d peers", len(fs.Peers))
-
-	// for _, peer := range fs.Peers {
-	// 	var buf bytes.Buffer
-	// 	if err := gob.NewEncoder(&buf).Encode(msg); err != nil {
-	// 		log.Printf("Failed to encode message for peer %s: %v", peer.RemoteAddr(), err)
-	// 		continue
-	// 	}
-	// 	if _, err := peer.Write(buf.Bytes()); err != nil {
-	// 		log.Printf("Failed to send message to peer %s: %v", peer.RemoteAddr(), err)
-	// 	} else {
-	// 		log.Printf("Message sent to peer %s: %s", peer.RemoteAddr(), msg.Key)
-	// 	}
-	// }
-	// return nil
 
 	peers := []io.Writer{}
 	for _, peer := range fs.Peers {
@@ -81,32 +72,48 @@ func (fs *FileServer) Broadcast(msg *Message) error {
 }
 
 func (fs *FileServer) StoreData(key string, r io.Reader) error {
-	//1.store the data in the disk
-	// 2. broadcast the message to all peers
+
 	buf := new(bytes.Buffer)
-	if _, err := buf.ReadFrom(r); err != nil {
-		return err
+	tee := io.TeeReader(r, buf) // Create a TeeReader to read from r and write to buf
+
+	if _, err := fs.Store.writeStream(key, tee); err != nil {
+		return fmt.Errorf("failed to store data: %v", err)
 	}
 
-	//payload := []byte(buf.Bytes()) // Convert the buffer to a byte slice
-
-	msg := p2p.RPC{
-		Key:     key,
-		Payload: buf.Bytes(), // Set the payload to the byte slice
+	//buf := new(bytes.Buffer)
+	msg := &Message{
+		Payload: &MessageStoreFile{
+			Key:  key, // Set the key for the file
+			Size: 16,
+		},
 	}
 
-	// if err := gob.NewEncoder(buf).Encode(msg); err != nil {
-	// 	return fmt.Errorf("failed to encode message: %v", err)
-	// }
-	// Store the file in the store
+	rpc1 := p2p.RPC{
+		From:    key,
+		Payload: msg,  // Set the payload to the byte slice
+		Stream:  true, // Indicate that this is a stream
+	}
+
 	for _, peer := range fs.Peers {
-		if err := peer.Send(&msg); err != nil {
-			log.Printf("Failed to send message to peer %s: %v", peer.RemoteAddr(), err)
+		if err := peer.Send(&rpc1); err != nil {
+			log.Printf("failed to send message to peer %s: %v", peer.RemoteAddr(), err)
 			continue
 		}
-		log.Printf("Message sent to peer %s: %s", peer.RemoteAddr(), key)
+		n, err := io.Copy(peer, r)
+		if err != nil {
+			return err
+		}
+		fmt.Println("Written and received bytes  ; ", n)
 	}
+
+	//payload := []byte("Hello, this is a test message") // Example payload
+	// rpc := p2p.RPC{
+	// 	From:    key,
+	// 	Payload: payload, // Set the payload to the byte slice
+	// }s
+
 	return nil
+
 }
 
 // Stop gracefully stops the file server.
@@ -140,28 +147,86 @@ func (fs *FileServer) loop() {
 	for {
 		select {
 		case rpc := <-fs.Opts.Transport.Consume():
-			switch payload := rpc.Payload.(type) {
-			case []byte:
-				log.Printf("Received raw key/string: %s", string(payload))
-			default:
-				log.Printf("Received unknown message type: %T", payload)
-				// You can handle other message types here if needed
+			//var msg Message
+			msg, ok := rpc.Payload.(*Message)
+			if !ok {
+				log.Println("received payload is not of type *Message")
+				continue // Skip processing if the payload is not of type *Message
 			}
+			if err := fs.handleMessage(rpc.From, msg); err != nil {
+				log.Println("handle message error: ", err)
+				return
+			}
+
 		case <-fs.quitchan:
 			return // Exit the loop when quitchan is closed
 		}
 	}
 }
 
-// func (fs *FileServer) HandleMessage(msg *Message) error {
+func (s *FileServer) handleMessage(from string, msg *Message) error {
+	switch v := msg.Payload.(type) {
+	case MessageStoreFile:
+		return s.handleMessageStoreFile(from, v)
+		// case MessageGetFile:
+		// 	return s.handleMessageGetFile(from, v)
+	}
 
-// 	switch payload := msg.Payload.(type) {
-// 	case *DataMessage:
-// 		log.Printf("Received data message with key: %+v", payload)
+	return nil
+}
 
+// func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error {
+// 	if !s.Store.HasKey(msg.ID, msg.Key) {
+// 		return fmt.Errorf("[%s] need to serve file (%s) but it does not exist on disk", s.Transport.Addr(), msg.Key)
 // 	}
+
+// 	fmt.Printf("[%s] serving file (%s) over the network\n", s.Transport.Addr(), msg.Key)
+
+// 	fileSize, r, err := s.store.Read(msg.ID, msg.Key)
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	if rc, ok := r.(io.ReadCloser); ok {
+// 		fmt.Println("closing readCloser")
+// 		defer rc.Close()
+// 	}
+
+// 	peer, ok := s.Peers[from]
+// 	if !ok {
+// 		return fmt.Errorf("peer %s not in map", from)
+// 	}
+
+// 	// First send the "incomingStream" byte to the peer and then we can send
+// 	// the file size as an int64.
+// 	peer.Send([]byte{p2p.IncomingStream})
+// 	binary.Write(peer, binary.LittleEndian, fileSize)
+// 	n, err := io.Copy(peer, r)
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	fmt.Printf("[%s] written (%d) bytes over the network to %s\n", s.Transport.Addr(), n, from)
+
 // 	return nil
 // }
+
+func (s *FileServer) handleMessageStoreFile(from string, msg MessageStoreFile) error {
+	peer, ok := s.Peers[from]
+	if !ok {
+		return fmt.Errorf("peer (%s) could not be found in the peer list", from)
+	}
+	fmt.Printf("[%s] received file store request for key (%s) from peer %s\n Peer : ", s.Opts.ListenAddr, msg.Key, from)
+	n, err := s.Store.Write(msg.Key, io.LimitReader(peer, msg.Size))
+	if err != nil {
+		return err
+	}
+	fmt.Printf("[%s] stored file with key (%s) of size (%d) bytes from peer %s\n", s.Opts.ListenAddr, msg.Key, n, from)
+
+	peer.(*p2p.TCPPeer).Wg.Done() // Signal that the stream is done
+
+	return nil
+}
 
 // bootstrapNetwork connects to the bootstrap nodes specified in the FileServer options.
 // It runs in a separate goroutine for each bootstrap node to allow concurrent connections.
@@ -196,5 +261,6 @@ func (fs *FileServer) Start() error {
 
 func (fs *FileServer) StoreFile(key string, r io.Reader) error {
 	// Store the file in the store
-	return fs.Store.Write(key, r)
+	_, err := fs.Store.Write(key, r)
+	return err
 }
