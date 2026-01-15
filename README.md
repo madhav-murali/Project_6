@@ -10,9 +10,9 @@ While the core architecture (Event Loops, Handshake Interfaces) was manually des
 * **Async Verification:** AI was utilized to verify channel safety and potential deadlocks in the `Goroutine` event loop implementation.
 
 ## 🚀 Key Features
-* [cite_start]**Custom TCP Transport:** Encapsulates low-level listeners/dialers for robust peer state management[cite: 26].
-* [cite_start]**Pluggable Protocol System:** Interface-based design allowing hot-swappable Handshake and Decoder logic (Binary/GOB)[cite: 27].
-* [cite_start]**Non-Blocking I/O:** Fully decoupled network I/O from message processing using an asynchronous event loop pattern[cite: 28].
+* **Custom TCP Transport:** Encapsulates low-level listeners/dialers for robust peer state management.
+* **Pluggable Protocol System:** Interface-based design allowing hot-swappable Handshake and Decoder logic (Binary/GOB).
+* **Non-Blocking I/O:** Fully decoupled network I/O from message processing using an asynchronous event loop pattern.
 
 ## 🛠 Tech Stack
 * **Language:** Go (Golang)
